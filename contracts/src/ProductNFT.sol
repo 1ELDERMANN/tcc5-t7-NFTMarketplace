@@ -44,7 +44,7 @@ contract ProductNFT is ERC721URIStorage, Ownable {
 
     constructor() ERC721("Marketplace Product", "MPROD") Ownable(msg.sender) {}
 
-    function approvedSeller(address seller) external onlyOwner {
+    function approveSeller(address seller) external onlyOwner {
         require(seller != address(0), "ProductNFT: invalid address");
         approvedSellers[seller] = true;
         emit SellerApproved(seller);

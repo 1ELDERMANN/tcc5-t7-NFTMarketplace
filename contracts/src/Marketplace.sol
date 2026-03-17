@@ -342,4 +342,20 @@ contract Marketplace is ReentrancyGuard, Ownable {
     function totalListings() external view returns (uint256) {
         return _listingIdCounter;
     }
+
+    function getListing(uint256 listingId) 
+        external 
+        view 
+        returns (Listing memory) 
+    {
+        return listings[listingId];
+    }
+
+    function getOrder(uint256 orderId)
+        external
+        view
+        returns (Order memory)
+    {
+        return orders[orderId];
+    }
 }
