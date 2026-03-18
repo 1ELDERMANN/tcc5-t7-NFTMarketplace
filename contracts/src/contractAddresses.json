@@ -1,0 +1,6 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "productNFT": "0x390Ced1a254F953F4FCA40AB6c8cD335b873898",
+  "marketplace": "0x3D7B9023E15693d14F5F5386F0CE466e56D25559"
+}
