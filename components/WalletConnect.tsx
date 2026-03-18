@@ -20,9 +20,9 @@ export default function WalletConnect() {
       {address ? (
         <button
           onClick={handleDisconnect}
-          className="bg-red-600 text-white px-4 py-2 rounded"
+          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded font-medium"
         >
-          Disconnect ({address.slice(0, 6)}...)
+          Connected as {address}
         </button>
       ) : (
         <button
