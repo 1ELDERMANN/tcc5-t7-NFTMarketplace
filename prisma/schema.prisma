@@ -1,60 +1,58 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-  provider = "prisma-client"
+  provider = "prisma-client-js"
   output   = "../lib/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
-  id     String @id @default(uuid())
-  name   String
-  email  String @unique
-  wallet String?
-  role   Role @default(USER)
+  id        String   @id @default(uuid())
+  name      String?
+  email     String?  @unique
+  wallet    String   @unique
+  role      Role     @default(USER)
   createdAt DateTime @default(now())
-  reviews Review[]
-  payments Payment[]
-  attendance Attendance[]
+  orders    Order[]
+  reviews   Review[]
 }
 
-model Payment {
-  id       String @id @default(uuid())
-  userId   String
-  amount   Float
-  reference String
-  hashProof String?
-  createdAt DateTime @default(now())
-  user     User  @relation(fields: [userId], references: [id])
+model Order {
+  id          String      @id @default(uuid())
+  orderId     Int
+  listingId   Int
+  tokenId     Int
+  buyer       String
+  seller      String
+  price       Float
+  quantity    Int
+  receiptHash String?
+  receiptURI  String?
+  status      OrderStatus @default(CONFIRMED)
+  createdAt   DateTime    @default(now())
+  user        User        @relation(fields: [buyer], references: [wallet])
 }
 
 model Review {
-  id     String @id @default(uuid())
-  content String
-  rating  Int
-  hashProof String?
-  userId   String
+  id        String   @id @default(uuid())
+  content   String
+  rating    Int
+  tokenId   Int
+  wallet    String
   createdAt DateTime @default(now())
-  user    User  @relation(fields: [userId], references: [id])
-}
-
-model Attendance {
-  id          String  @id @default(uuid())
-  userId      String
-  date        DateTime
-  hashProof   String?
-  user      User @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [wallet], references: [wallet])
 }
 
 enum Role {
   ADMIN
   USER
+}
+
+enum OrderStatus {
+  CONFIRMED
+  REFUNDED
+  DISPUTED
 }
