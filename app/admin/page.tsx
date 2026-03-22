@@ -1,191 +1,150 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { ethers } from 'ethers';
+import Navbar from "@/components/Navbar";
 
-// Marketplace contract address - FIXED: Added .toLowerCase() to bypass checksum validation
-const MARKETPLACE_ADDR = '0x3D7B9023E15693d14F5F5386F0CE466e56D25559'.toLowerCase();
-console.log('Current address being used:', MARKETPLACE_ADDR);
+// --- CONTRACT CONSTANTS ---
+const PRODUCT_NFT_ADDR = "0x390Ced1a254F953F4FCA40AB6c8cD335b873898";
+const MARKETPLACE_ADDR = "0x3D7B9023E15693D14F5F5386F0CE466e56D25559";
 
-// Marketplace ABI
-const marketplaceABI = [
-  {"type":"constructor","inputs":[{"name":"_productNFT","type":"address","internalType":"address"}],"stateMutability":"nonpayable"},
-  {"type":"function","name":"compareListings","inputs":[{"name":"tokenId","type":"uint256"}],"outputs":[{"name":"activeListings","type":"tuple[]","components":[{"name":"listingId","type":"uint256"},{"name":"tokenId","type":"uint256"},{"name":"seller","type":"address"},{"name":"price","type":"uint256"},{"name":"quantity","type":"uint256"},{"name":"active","type":"bool"}]}],"stateMutability":"view"},
-  {"type":"function","name":"deactivateListing","inputs":[{"name":"listingId","type":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
-  {"type":"function","name":"getAllActiveListings","inputs":[],"outputs":[{"type":"tuple[]","components":[{"name":"listingId","type":"uint256"},{"name":"tokenId","type":"uint256"},{"name":"seller","type":"address"},{"name":"price","type":"uint256"},{"name":"quantity","type":"uint256"},{"name":"active","type":"bool"}]}],"stateMutability":"view"},
-  {"type":"function","name":"getListing","inputs":[{"name":"listingId","type":"uint256"}],"outputs":[{"type":"tuple","components":[{"name":"listingId","type":"uint256"},{"name":"tokenId","type":"uint256"},{"name":"seller","type":"address"},{"name":"price","type":"uint256"},{"name":"quantity","type":"uint256"},{"name":"active","type":"bool"}]}],"stateMutability":"view"},
-  {"type":"function","name":"listProduct","inputs":[{"name":"tokenId","type":"uint256"},{"name":"price","type":"uint256"},{"name":"quantity","type":"uint256"}],"outputs":[{"type":"uint256"}],"stateMutability":"nonpayable"},
+const productNFTABI = [
+  {"type":"function","name":"mintProduct","inputs":[{"name":"name","type":"string"},{"name":"category","type":"string"},{"name":"tokenURI","type":"string"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"setApprovalForAll","inputs":[{"name":"operator","type":"address"},{"name":"approved","type":"bool"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"approveSeller","inputs":[{"name":"seller","type":"address"}],"outputs":[],"stateMutability":"nonpayable"},
   {"type":"function","name":"owner","inputs":[],"outputs":[{"type":"address"}],"stateMutability":"view"},
-  {"type":"function","name":"paused","inputs":[],"outputs":[{"type":"bool"}],"stateMutability":"view"},
-  {"type":"function","name":"totalListings","inputs":[],"outputs":[{"type":"uint256"}],"stateMutability":"view"},
-  {"type":"function","name":"withdrawFees","inputs":[],"outputs":[],"stateMutability":"nonpayable"}
+  {"type":"function","name":"approvedSellers","inputs":[{"name":"","type":"address"}],"outputs":[{"type":"bool"}],"stateMutability":"view"}
+] as const;
+
+const marketplaceABI = [
+  {"type":"function","name":"listProduct","inputs":[{"name":"tokenId","type":"uint256"},{"name":"price","type":"uint256"},{"name":"quantity","type":"uint256"}],"outputs":[{"type":"uint256"}],"stateMutability":"nonpayable"}
 ] as const;
 
 export default function Admin() {
   const [name, setName] = useState('');
-  const [price, setPrice] = useState('');
-  const [image, setImage] = useState('');
-  const [tokenId, setTokenId] = useState('1');      
-  const [quantity, setQuantity] = useState('1');    
+  const [category, setCategory] = useState('');
+  const [imageURL, setImageURL] = useState('');
+  const [price, setPrice] = useState('0.01');
+  const [quantity, setQuantity] = useState('1');
+  const [targetSeller, setTargetSeller] = useState('');
   const [message, setMessage] = useState('');
-  const [account, setAccount] = useState<string | null>(null);
-  const [signer, setSigner] = useState<ethers.Signer | null>(null);
+  const [signer, setSigner] = useState<any>(null);
+  const [account, setAccount] = useState('');
 
   const connectWallet = async () => {
-    if (window.ethereum) {
+    if (typeof window.ethereum !== 'undefined') {
       try {
         const provider = new ethers.BrowserProvider(window.ethereum);
-        await provider.send('eth_requestAccounts', []);
-        const signer = await provider.getSigner();
-        const address = await signer.getAddress();
-        setAccount(address);
-        setSigner(signer);
-        setMessage('Wallet connected! Ready for real upload');
+        const s = await provider.getSigner();
+        const addr = await s.getAddress();
+        setSigner(s);
+        setAccount(addr);
+        setTargetSeller(addr);
+        setMessage(`Connected: ${addr.slice(0,6)}...`);
       } catch (err: any) {
-        setMessage('Failed to connect wallet: ' + err.message);
+        setMessage("Connection failed.");
       }
     } else {
-      setMessage('MetaMask not detected. Please install it.');
+      setMessage("Install MetaMask");
     }
   };
 
-  useEffect(() => {
-    if (window.ethereum) {
-      connectWallet();
+  const handleApproveSeller = async () => {
+    if (!signer) return setMessage("Connect wallet first!");
+    try {
+      setMessage("Verifying Owner...");
+      const productNFT = new ethers.Contract(PRODUCT_NFT_ADDR, productNFTABI, signer);
+      const ownerAddress = await productNFT.owner();
+      
+      if (account.toLowerCase() !== ownerAddress.toLowerCase()) {
+        throw new Error("Only the Contract Owner can approve sellers.");
+      }
+
+      const tx = await productNFT.approveSeller(targetSeller);
+      setMessage("Transaction pending...");
+      await tx.wait();
+      setMessage("✅ Seller Approved Successfully!");
+    } catch (err: any) {
+      setMessage("ERROR: " + (err.reason || err.message));
     }
-  }, []);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!signer) {
-      setMessage('Wallet not connected');
-      return;
-    }
+    if (!signer) return setMessage('Connect Wallet First');
 
     try {
-      setMessage('Preparing transaction...');
+      const productNFT = new ethers.Contract(PRODUCT_NFT_ADDR, productNFTABI, signer);
+      const marketplace = new ethers.Contract(MARKETPLACE_ADDR, marketplaceABI, signer);
 
-      // FIXED: Removed the extra JsonRpcProvider. 
-      // When writing to the blockchain (listing a product), we use the signer directly.
-      const marketplace = new ethers.Contract(
-        MARKETPLACE_ADDR,
-        marketplaceABI,
-        signer
-      );
+      setMessage('Checking Authorization...');
+      const isApproved = await productNFT.approvedSellers(account);
+      const ownerAddress = await productNFT.owner();
+      
+      if (account.toLowerCase() !== ownerAddress.toLowerCase() && !isApproved) {
+        throw new Error("Not Authorized to mint.");
+      }
 
-      setMessage('Waiting for MetaMask signature...');
+      setMessage('Step 1/3: Minting NFT...');
+      const mintTx = await productNFT.mintProduct(name, category, imageURL);
+      const mintReceipt = await mintTx.wait();
+      
+      const eventLog = mintReceipt.logs.find((log: any) => log.topics.length >= 2);
+      const tokenIdHex = eventLog.topics[1]; 
+      const displayId = BigInt(tokenIdHex).toString();
+      
+      setMessage(`Step 2/3: Approving Marketplace for ID #${displayId}...`);
+      const approveTx = await productNFT.setApprovalForAll(MARKETPLACE_ADDR, true);
+      await approveTx.wait();
 
-      // Convert values to BigInt correctly for Ethers v6
-      const tx = await marketplace.listProduct(
-        BigInt(tokenId),                    
-        ethers.parseEther(price),   
-        BigInt(quantity)                    
-      );
+      setMessage(`Step 3/3: Listing ID #${displayId} for ${price} ETH...`);
+      const listTx = await marketplace.listProduct(BigInt(tokenIdHex), ethers.parseEther(price), BigInt(quantity));
+      await listTx.wait();
 
-      setMessage('Transaction sent! Waiting for confirmation...');
-      await tx.wait();
-
-      setMessage(`Success! Product listed. Tx hash: ${tx.hash}`);
+      setMessage(`🔥 SUCCESS! Product #${displayId} is now live.`);
+      setName(''); setCategory(''); setImageURL('');
     } catch (err: any) {
-      console.error('Tx error:', err);
-      // Enhanced error reporting
-      const errorMsg = err.reason || err.message || 'Unknown error';
-      setMessage('Failed: ' + errorMsg);
+      setMessage('ERROR: ' + (err.reason || err.message));
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-8">
-      <h1 className="text-4xl font-bold text-center mb-12">Admin - Upload Product</h1>
-
-      {!account ? (
-        <div className="text-center">
-          <button
-            onClick={connectWallet}
-            className="bg-blue-600 hover:bg-blue-700 text-white py-3 px-8 rounded-lg font-medium"
-          >
-            Connect MetaMask
-          </button>
-        </div>
-      ) : (
-        <div className="max-w-md mx-auto bg-gray-800 p-8 rounded-xl shadow-lg">
-          <p className="text-green-400 text-center mb-6">
-            Wallet connected: {account.slice(0, 6)}...{account.slice(-4)}
-          </p>
-
+    <div className="min-h-screen bg-gray-950 text-white">
+      <Navbar />
+      <div className="flex flex-col items-center justify-center py-20 px-4">
+        <div className="w-full max-w-md bg-black border border-gray-800 p-8 rounded-[40px] shadow-2xl">
+          <h1 className="text-3xl font-black mb-8 text-center text-blue-500 uppercase italic">Admin Panel</h1>
+          
           {message && (
-            <div className={`text-center mb-6 p-4 rounded text-sm break-words ${message.includes('Success') ? 'bg-green-900' : 'bg-blue-900/50 border border-blue-500'}`}>
+            <div className={`mb-6 p-4 rounded-2xl text-[10px] font-mono border ${message.includes('ERROR') ? 'bg-red-500/10 border-red-500 text-red-400' : 'bg-blue-500/10 border-blue-500 text-blue-400'} break-all`}>
               {message}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label className="block text-gray-300 mb-2">Product Name (Display only)</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. EmizyNFT #001"
-                className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-              />
+          {!account ? (
+            <button onClick={connectWallet} className="w-full mb-6 bg-blue-600 py-4 rounded-2xl font-bold uppercase hover:bg-blue-700 transition-all">Connect Wallet</button>
+          ) : (
+            <div className="mb-8 p-4 bg-gray-900 rounded-2xl border border-gray-800">
+               <p className="text-[10px] uppercase text-gray-500 font-bold mb-2">Owner Action: Grant Seller Access</p>
+               <div className="flex gap-2">
+                 <input className="flex-1 p-2 bg-black rounded-lg border border-gray-800 text-[10px] font-mono outline-none" placeholder="Address" value={targetSeller} onChange={e => setTargetSeller(e.target.value)} />
+                 <button onClick={handleApproveSeller} className="bg-blue-600 px-4 rounded-lg text-[10px] font-bold uppercase hover:bg-blue-700 transition-all">Grant</button>
+               </div>
             </div>
+          )}
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-gray-300 mb-2">Token ID</label>
-                <input
-                  type="number"
-                  value={tokenId}
-                  onChange={(e) => setTokenId(e.target.value)}
-                  className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-gray-300 mb-2">Quantity</label>
-                <input
-                  type="number"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white"
-                  required
-                />
-              </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <input className="w-full p-4 bg-gray-900 rounded-2xl border border-gray-800 outline-none focus:border-blue-500" placeholder="Product Name" value={name} onChange={e => setName(e.target.value)} required />
+            <input className="w-full p-4 bg-gray-900 rounded-2xl border border-gray-800 outline-none focus:border-blue-500" placeholder="Category" value={category} onChange={e => setCategory(e.target.value)} required />
+            <input className="w-full p-4 bg-gray-900 rounded-2xl border border-gray-800 outline-none focus:border-blue-500" placeholder="Image URL" value={imageURL} onChange={e => setImageURL(e.target.value)} required />
+            <div className="flex gap-4">
+               <input className="flex-[2] p-4 bg-gray-900 rounded-2xl border border-gray-800 text-blue-400 font-bold outline-none" value={price} onChange={e => setPrice(e.target.value)} required />
+               <input className="flex-1 p-4 bg-gray-900 rounded-2xl border border-gray-800 text-center outline-none" type="number" value={quantity} onChange={e => setQuantity(e.target.value)} required />
             </div>
-
-            <div>
-              <label className="block text-gray-300 mb-2">Price (ETH)</label>
-              <input
-                type="text"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                placeholder="0.05"
-                className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-gray-300 mb-2">Image URL (Display only)</label>
-              <input
-                type="text"
-                value={image}
-                onChange={(e) => setImage(e.target.value)}
-                className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white"
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold transition-transform hover:scale-[1.02]"
-            >
-              Upload Product
-            </button>
+            <button type="submit" disabled={!account} className="w-full bg-blue-600 hover:bg-blue-700 py-5 rounded-3xl font-black text-lg mt-4 transition-all uppercase tracking-widest disabled:opacity-50">Deploy Product</button>
           </form>
         </div>
-      )}
+      </div>
     </div>
   );
 }
