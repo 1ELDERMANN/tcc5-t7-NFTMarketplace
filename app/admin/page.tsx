@@ -2,157 +2,149 @@
 
 import { useState } from 'react';
 import { ethers } from 'ethers';
+import Navbar from "@/components/Navbar";
 
-export default function AdminUpload() {
+// --- CONTRACT CONSTANTS ---
+const PRODUCT_NFT_ADDR = "0x390Ced1a254F953F4FCA40AB6c8cD335b873898";
+const MARKETPLACE_ADDR = "0x3D7B9023E15693D14F5F5386F0CE466e56D25559";
+
+const productNFTABI = [
+  {"type":"function","name":"mintProduct","inputs":[{"name":"name","type":"string"},{"name":"category","type":"string"},{"name":"tokenURI","type":"string"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"setApprovalForAll","inputs":[{"name":"operator","type":"address"},{"name":"approved","type":"bool"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"approveSeller","inputs":[{"name":"seller","type":"address"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"owner","inputs":[],"outputs":[{"type":"address"}],"stateMutability":"view"},
+  {"type":"function","name":"approvedSellers","inputs":[{"name":"","type":"address"}],"outputs":[{"type":"bool"}],"stateMutability":"view"}
+] as const;
+
+const marketplaceABI = [
+  {"type":"function","name":"listProduct","inputs":[{"name":"tokenId","type":"uint256"},{"name":"price","type":"uint256"},{"name":"quantity","type":"uint256"}],"outputs":[{"type":"uint256"}],"stateMutability":"nonpayable"}
+] as const;
+
+export default function Admin() {
   const [name, setName] = useState('');
-  const [price, setPrice] = useState('');
-  const [image, setImage] = useState('');
+  const [category, setCategory] = useState('');
+  const [imageURL, setImageURL] = useState('');
+  const [price, setPrice] = useState('0.01');
+  const [quantity, setQuantity] = useState('1');
+  const [targetSeller, setTargetSeller] = useState('');
   const [message, setMessage] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [signer, setSigner] = useState<any>(null);
+  const [account, setAccount] = useState('');
 
-  const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setLoading(true);
-    setMessage('Connecting wallet...');
-
-    if (!window.ethereum) {
-      setMessage('MetaMask not found! Install it to continue.');
-      setLoading(false);
-      return;
+  const connectWallet = async () => {
+    if (typeof window.ethereum !== 'undefined') {
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const s = await provider.getSigner();
+        const addr = await s.getAddress();
+        setSigner(s);
+        setAccount(addr);
+        setTargetSeller(addr);
+        setMessage(`Connected: ${addr.slice(0,6)}...`);
+      } catch (err: any) {
+        setMessage("Connection failed.");
+      }
+    } else {
+      setMessage("Install MetaMask");
     }
+  };
+
+  const handleApproveSeller = async () => {
+    if (!signer) return setMessage("Connect wallet first!");
+    try {
+      setMessage("Verifying Owner...");
+      const productNFT = new ethers.Contract(PRODUCT_NFT_ADDR, productNFTABI, signer);
+      const ownerAddress = await productNFT.owner();
+      
+      if (account.toLowerCase() !== ownerAddress.toLowerCase()) {
+        throw new Error("Only the Contract Owner can approve sellers.");
+      }
+
+      const tx = await productNFT.approveSeller(targetSeller);
+      setMessage("Transaction pending...");
+      await tx.wait();
+      setMessage("✅ Seller Approved Successfully!");
+    } catch (err: any) {
+      setMessage("ERROR: " + (err.reason || err.message));
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!signer) return setMessage('Connect Wallet First');
 
     try {
-      // Connect MetaMask
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      await provider.send("eth_requestAccounts", []);
-      const signer = await provider.getSigner();
+      const productNFT = new ethers.Contract(PRODUCT_NFT_ADDR, productNFTABI, signer);
+      const marketplace = new ethers.Contract(MARKETPLACE_ADDR, marketplaceABI, signer);
 
-      // Leader's Marketplace contract address (from contractAddresses.json)
-      const marketplaceAddress = '0x3D7B9023E15693d14F5F5386F0CE466e56D25559';
+      setMessage('Checking Authorization...');
+      const isApproved = await productNFT.approvedSellers(account);
+      const ownerAddress = await productNFT.owner();
+      
+      if (account.toLowerCase() !== ownerAddress.toLowerCase() && !isApproved) {
+        throw new Error("Not Authorized to mint.");
+      }
 
-      // PASTE THE FULL ABI ARRAY HERE
-      // 1. Open /contracts/src/abis/Marketplace.json
-      // 2. Copy the entire array (from [ to ])
-      // 3. Paste it below (replace the [] completely)
-      const marketplaceABI = [
-  {"type":"constructor","inputs":[{"name":"_productNFT","type":"address","internalType":"address"}],"stateMutability":"nonpayable"},
-  {"type":"function","name":"compareListings","inputs":[{"name":"tokenId","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"activeListings","type":"tuple[]","internalType":"struct Marketplace.Listing[]","components":[{"name":"listingId","type":"uint256","internalType":"uint256"},{"name":"tokenId","type":"uint256","internalType":"uint256"},{"name":"seller","type":"address","internalType":"address payable"},{"name":"price","type":"uint256","internalType":"uint256"},{"name":"quantity","type":"uint256","internalType":"uint256"},{"name":"active","type":"bool","internalType":"bool"}]}],"stateMutability":"view"},
-  {"type":"function","name":"deactivateListing","inputs":[{"name":"listingId","type":"uint256","internalType":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
-  {"type":"function","name":"disputeOrder","inputs":[{"name":"orderId","type":"uint256","internalType":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
-  {"type":"function","name":"getAllActiveListings","inputs":[],"outputs":[{"name":"","type":"tuple[]","internalType":"struct Marketplace.Listing[]","components":[{"name":"listingId","type":"uint256","internalType":"uint256"},{"name":"tokenId","type":"uint256","internalType":"uint256"},{"name":"seller","type":"address","internalType":"address payable"},{"name":"price","type":"uint256","internalType":"uint256"},{"name":"quantity","type":"uint256","internalType":"uint256"},{"name":"active","type":"bool","internalType":"bool"}]}],"stateMutability":"view"},
-  {"type":"function","name":"getBuyerOrders","inputs":[{"name":"buyer","type":"address","internalType":"address"}],"outputs":[{"name":"","type":"tuple[]","internalType":"struct Marketplace.Order[]","components":[{"name":"orderId","type":"uint256","internalType":"uint256"},{"name":"listingId","type":"uint256","internalType":"uint256"},{"name":"tokenId","type":"uint256","internalType":"uint256"},{"name":"buyer","type":"address","internalType":"address"},{"name":"seller","type":"address","internalType":"address"},{"name":"price","type":"uint256","internalType":"uint256"},{"name":"quantity","type":"uint256","internalType":"uint256"},{"name":"timestamp","type":"uint256","internalType":"uint256"},{"name":"receiptHash","type":"bytes32","internalType":"bytes32"},{"name":"receiptURI","type":"string","internalType":"string"},{"name":"status","type":"uint8","internalType":"enum Marketplace.OrderStatus"}]}],"stateMutability":"view"},
-  {"type":"function","name":"getListing","inputs":[{"name":"listingId","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"","type":"tuple","internalType":"struct Marketplace.Listing","components":[{"name":"listingId","type":"uint256","internalType":"uint256"},{"name":"tokenId","type":"uint256","internalType":"uint256"},{"name":"seller","type":"address","internalType":"address payable"},{"name":"price","type":"uint256","internalType":"uint256"},{"name":"quantity","type":"uint256","internalType":"uint256"},{"name":"active","type":"bool","internalType":"bool"}]}],"stateMutability":"view"},
-  {"type":"function","name":"getOrder","inputs":[{"name":"orderId","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"","type":"tuple","internalType":"struct Marketplace.Order","components":[{"name":"orderId","type":"uint256","internalType":"uint256"},{"name":"listingId","type":"uint256","internalType":"uint256"},{"name":"tokenId","type":"uint256","internalType":"uint256"},{"name":"buyer","type":"address","internalType":"address"},{"name":"seller","type":"address","internalType":"address"},{"name":"price","type":"uint256","internalType":"uint256"},{"name":"quantity","type":"uint256","internalType":"uint256"},{"name":"timestamp","type":"uint256","internalType":"uint256"},{"name":"receiptHash","type":"bytes32","internalType":"bytes32"},{"name":"receiptURI","type":"string","internalType":"string"},{"name":"status","type":"uint8","internalType":"enum Marketplace.OrderStatus"}]}],"stateMutability":"view"},
-  {"type":"function","name":"getReceiptURI","inputs":[{"name":"orderId","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"","type":"string","internalType":"string"}],"stateMutability":"view"},
-  {"type":"function","name":"getSellerListings","inputs":[{"name":"seller","type":"address","internalType":"address"}],"outputs":[{"name":"","type":"tuple[]","internalType":"struct Marketplace.Listing[]","components":[{"name":"listingId","type":"uint256","internalType":"uint256"},{"name":"tokenId","type":"uint256","internalType":"uint256"},{"name":"seller","type":"address","internalType":"address payable"},{"name":"price","type":"uint256","internalType":"uint256"},{"name":"quantity","type":"uint256","internalType":"uint256"},{"name":"active","type":"bool","internalType":"bool"}]}],"stateMutability":"view"},
-  {"type":"function","name":"listProduct","inputs":[{"name":"tokenId","type":"uint256","internalType":"uint256"},{"name":"price","type":"uint256","internalType":"uint256"},{"name":"quantity","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"nonpayable"},
-  {"type":"function","name":"listings","inputs":[{"name":"","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"listingId","type":"uint256","internalType":"uint256"},{"name":"tokenId","type":"uint256","internalType":"uint256"},{"name":"seller","type":"address","internalType":"address payable"},{"name":"price","type":"uint256","internalType":"uint256"},{"name":"quantity","type":"uint256","internalType":"uint256"},{"name":"active","type":"bool","internalType":"bool"}],"stateMutability":"view"},
-  {"type":"function","name":"orders","inputs":[{"name":"","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"orderId","type":"uint256","internalType":"uint256"},{"name":"listingId","type":"uint256","internalType":"uint256"},{"name":"tokenId","type":"uint256","internalType":"uint256"},{"name":"buyer","type":"address","internalType":"address"},{"name":"seller","type":"address","internalType":"address"},{"name":"price","type":"uint256","internalType":"uint256"},{"name":"quantity","type":"uint256","internalType":"uint256"},{"name":"timestamp","type":"uint256","internalType":"uint256"},{"name":"receiptHash","type":"bytes32","internalType":"bytes32"},{"name":"receiptURI","type":"string","internalType":"string"},{"name":"status","type":"uint8","internalType":"enum Marketplace.OrderStatus"}],"stateMutability":"view"},
-  {"type":"function","name":"owner","inputs":[],"outputs":[{"name":"","type":"address","internalType":"address"}],"stateMutability":"view"},
-  {"type":"function","name":"paused","inputs":[],"outputs":[{"name":"","type":"bool","internalType":"bool"}],"stateMutability":"view"},
-  {"type":"function","name":"placeOrder","inputs":[{"name":"listingId","type":"uint256","internalType":"uint256"},{"name":"quantity","type":"uint256","internalType":"uint256"},{"name":"receiptHash","type":"bytes32","internalType":"bytes32"},{"name":"receiptURI","type":"string","internalType":"string"}],"outputs":[],"stateMutability":"payable"},
-  {"type":"function","name":"platformFee","inputs":[],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
-  {"type":"function","name":"productNFT","inputs":[],"outputs":[{"name":"","type":"address","internalType":"contract ProductNFT"}],"stateMutability":"view"},
-  {"type":"function","name":"receiptHashToOrder","inputs":[{"name":"","type":"bytes32","internalType":"bytes32"}],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
-  {"type":"function","name":"refundOrder","inputs":[{"name":"orderId","type":"uint256","internalType":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
-  {"type":"function","name":"renounceOwnership","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
-  {"type":"function","name":"setPaused","inputs":[{"name":"_paused","type":"bool","internalType":"bool"}],"outputs":[],"stateMutability":"nonpayable"},
-  {"type":"function","name":"setPlatformFee","inputs":[{"name":"newFee","type":"uint256","internalType":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
-  {"type":"function","name":"totalListings","inputs":[],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
-  {"type":"function","name":"totalOrders","inputs":[],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
-  {"type":"function","name":"transferOwnership","inputs":[{"name":"newOwner","type":"address","internalType":"address"}],"outputs":[],"stateMutability":"nonpayable"},
-  {"type":"function","name":"updateListing","inputs":[{"name":"listingId","type":"uint256","internalType":"uint256"},{"name":"newPrice","type":"uint256","internalType":"uint256"},{"name":"newQuantity","type":"uint256","internalType":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
-  {"type":"function","name":"verifyReceipt","inputs":[{"name":"receiptHash","type":"bytes32","internalType":"bytes32"}],"outputs":[{"name":"valid","type":"bool","internalType":"bool"},{"name":"orderId","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
-  {"type":"function","name":"withdrawFees","inputs":[],"outputs":[],"stateMutability":"nonpayable"}
-] as const; // 'as const' helps TypeScript
+      setMessage('Step 1/3: Minting NFT...');
+      const mintTx = await productNFT.mintProduct(name, category, imageURL);
+      const mintReceipt = await mintTx.wait();
+      
+      const eventLog = mintReceipt.logs.find((log: any) => log.topics.length >= 2);
+      const tokenIdHex = eventLog.topics[1]; 
+      const displayId = BigInt(tokenIdHex).toString();
+      
+      setMessage(`Step 2/3: Approving Marketplace for ID #${displayId}...`);
+      const approveTx = await productNFT.setApprovalForAll(MARKETPLACE_ADDR, true);
+      await approveTx.wait();
 
-      const marketplace = new ethers.Contract(marketplaceAddress, marketplaceABI, signer);
+      setMessage(`Step 3/3: Listing ID #${displayId} for ${price} ETH...`);
+      const listTx = await marketplace.listProduct(BigInt(tokenIdHex), ethers.parseEther(price), BigInt(quantity));
+      await listTx.wait();
 
-      // REAL CONTRACT CALL — replace 'listProduct' with the actual function name from the ABI
-      // Open Marketplace.json → search for "name": "..." that takes 3 parameters (string name, uint256 price, string image)
-      // Common names: listProduct, mintAndList, createListing, requestOrder, addItem
-      // Example (change the function name and parameters to match):
-      // const tx = await marketplace.listProduct(name, ethers.parseEther(price), image);
-      // await tx.wait();
-
-      // For now — placeholder (uncomment when you know the real function)
-      // const tx = await marketplace.listProduct(name, ethers.parseEther(price), image);
-      // await tx.wait();
-
-      setMessage('Wallet connected! Ready for real upload (uncomment the tx line when ready)');
-      console.log('Wallet connected. Ready to call contract with:', { name, price, image });
-
-      setName('');
-      setPrice('');
-      setImage('');
+      setMessage(`🔥 SUCCESS! Product #${displayId} is now live.`);
+      setName(''); setCategory(''); setImageURL('');
     } catch (err: any) {
-      setMessage('Error: ' + (err.message || 'Something went wrong'));
-      console.error('Upload error:', err);
-    } finally {
-      setLoading(false);
+      setMessage('ERROR: ' + (err.reason || err.message));
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-8">
-      <h1 className="text-4xl font-bold text-center mb-8">Admin - Upload New Product</h1>
+    <div className="min-h-screen bg-gray-950 text-white">
+      <Navbar />
+      <div className="flex flex-col items-center justify-center py-20 px-4">
+        <div className="w-full max-w-md bg-black border border-gray-800 p-8 rounded-[40px] shadow-2xl">
+          <h1 className="text-3xl font-black mb-8 text-center text-blue-500 uppercase italic">Admin Panel</h1>
+          
+          {message && (
+            <div className={`mb-6 p-4 rounded-2xl text-[10px] font-mono border ${message.includes('ERROR') ? 'bg-red-500/10 border-red-500 text-red-400' : 'bg-blue-500/10 border-blue-500 text-blue-400'} break-all`}>
+              {message}
+            </div>
+          )}
 
-      <form onSubmit={handleUpload} className="max-w-lg mx-auto bg-gray-800 p-6 rounded-lg shadow-xl">
-        <div className="mb-4">
-          <label className="block text-gray-300 mb-1">Product Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:border-blue-500"
-            placeholder="e.g. EmizyNFT #001"
-            required
-            disabled={loading}
-          />
+          {!account ? (
+            <button onClick={connectWallet} className="w-full mb-6 bg-blue-600 py-4 rounded-2xl font-bold uppercase hover:bg-blue-700 transition-all">Connect Wallet</button>
+          ) : (
+            <div className="mb-8 p-4 bg-gray-900 rounded-2xl border border-gray-800">
+               <p className="text-[10px] uppercase text-gray-500 font-bold mb-2">Owner Action: Grant Seller Access</p>
+               <div className="flex gap-2">
+                 <input className="flex-1 p-2 bg-black rounded-lg border border-gray-800 text-[10px] font-mono outline-none" placeholder="Address" value={targetSeller} onChange={e => setTargetSeller(e.target.value)} />
+                 <button onClick={handleApproveSeller} className="bg-blue-600 px-4 rounded-lg text-[10px] font-bold uppercase hover:bg-blue-700 transition-all">Grant</button>
+               </div>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <input className="w-full p-4 bg-gray-900 rounded-2xl border border-gray-800 outline-none focus:border-blue-500" placeholder="Product Name" value={name} onChange={e => setName(e.target.value)} required />
+            <input className="w-full p-4 bg-gray-900 rounded-2xl border border-gray-800 outline-none focus:border-blue-500" placeholder="Category" value={category} onChange={e => setCategory(e.target.value)} required />
+            <input className="w-full p-4 bg-gray-900 rounded-2xl border border-gray-800 outline-none focus:border-blue-500" placeholder="Image URL" value={imageURL} onChange={e => setImageURL(e.target.value)} required />
+            <div className="flex gap-4">
+               <input className="flex-[2] p-4 bg-gray-900 rounded-2xl border border-gray-800 text-blue-400 font-bold outline-none" value={price} onChange={e => setPrice(e.target.value)} required />
+               <input className="flex-1 p-4 bg-gray-900 rounded-2xl border border-gray-800 text-center outline-none" type="number" value={quantity} onChange={e => setQuantity(e.target.value)} required />
+            </div>
+            <button type="submit" disabled={!account} className="w-full bg-blue-600 hover:bg-blue-700 py-5 rounded-3xl font-black text-lg mt-4 transition-all uppercase tracking-widest disabled:opacity-50">Deploy Product</button>
+          </form>
         </div>
-
-        <div className="mb-4">
-          <label className="block text-gray-300 mb-1">Price (ETH)</label>
-          <input
-            type="text"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:border-blue-500"
-            placeholder="e.g. 0.05"
-            required
-            disabled={loading}
-          />
-        </div>
-
-        <div className="mb-6">
-          <label className="block text-gray-300 mb-1">Image URL / IPFS</label>
-          <input
-            type="text"
-            value={image}
-            onChange={(e) => setImage(e.target.value)}
-            className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:border-blue-500"
-            placeholder="e.g. ipfs://Qm... or https://..."
-            required
-            disabled={loading}
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={loading}
-          className={`w-full text-white py-3 rounded font-medium transition ${
-            loading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-          }`}
-        >
-          {loading ? 'Connecting...' : 'Upload Product'}
-        </button>
-      </form>
-
-      {message && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white p-4 rounded shadow-lg text-center font-medium z-50">
-          {message}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

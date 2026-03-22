@@ -1,8 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  images: {
-    domains: ['images.unsplash.com'],
+  experimental: {
+    turbopack: false,  // ← this disables Turbopack and forces classic Webpack
   },
-}
+};
 
-export default nextConfig
+export default nextConfig;
